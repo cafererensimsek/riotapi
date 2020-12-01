@@ -2,7 +2,6 @@ const League = require('leagueapiwrapper');
 const fetch = require('node-fetch');
 require('dotenv').config();
 
-
 const LeagueAPI = new League(process.env.API_KEY, Region.TR);
 
 const championFrequencies = {};
@@ -14,7 +13,7 @@ fetch('http://ddragon.leagueoflegends.com/cdn/10.24.1/data/en_US/champion.json')
         championKeys[key] = value['key'];
     }
 }).then(() => {
-    LeagueAPI.getSummonerByName('KILLEREREN').then(accountInfo => {
+    LeagueAPI.getSummonerByName('Coulrophobic').then(accountInfo => {
         return LeagueAPI.getMatchList(accountInfo);
     }).then((activeGames) => {
         const frequencies = {};
@@ -27,7 +26,7 @@ fetch('http://ddragon.leagueoflegends.com/cdn/10.24.1/data/en_US/champion.json')
         }
         for (let [key1, freq] of Object.entries(championFrequencies)) {
             for (let [champion, key2] of Object.entries(championKeys)) {
-                if (key1 === key2) {
+                if (key1 === key2 && freq > 5) {
                     frequencies[champion] = freq;
                     continue;
                 }
