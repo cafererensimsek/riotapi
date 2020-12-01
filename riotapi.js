@@ -2,20 +2,18 @@ const League = require('leagueapiwrapper');
 const fetch = require('node-fetch');
 require('dotenv').config();
 
-const LeagueAPI = new League(process.env.API_KEY, Region.TR);
 
+const LeagueAPI = new League(process.env.API_KEY, Region.TR);
 const championFrequencies = {};
 const championKeys = {};
 
-
-fetch('http://ddragon.leagueoflegends.com/cdn/10.24.1/data/en_US/champion.json').then(res => res.json().then(champions => {
+fetch('http://ddragon.leagueoflegends.com/cdn/10.24.1/data/en_US/champion.json').then(res => res.json()).then(champions => {
     for (let [key, value] of Object.entries(champions['data'])) {
         championKeys[key] = value['key'];
     }
-}).then(() => {
-    LeagueAPI.getSummonerByName('Coulrophobic').then(accountInfo => {
-        return LeagueAPI.getMatchList(accountInfo);
-    }).then((activeGames) => {
+    return championKeys;
+}).then(() => LeagueAPI.getSummonerByName('Coulrophobic')).then(accountInfo => LeagueAPI.getMatchList(accountInfo))
+    .then((activeGames) => {
         const frequencies = {};
         for (game of activeGames['matches']) {
             if (game['champion'] in championFrequencies) {
@@ -32,7 +30,7 @@ fetch('http://ddragon.leagueoflegends.com/cdn/10.24.1/data/en_US/champion.json')
                 }
             }
         }
+        console.log(frequencies);
         return frequencies;
-    }).then(res => console.log(res));
-})).catch(err => console.log(err));
+    }).catch(err => console.log(err));
 
