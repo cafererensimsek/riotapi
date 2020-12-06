@@ -1,36 +1,116 @@
-const League = require('leagueapiwrapper');
-const fetch = require('node-fetch');
-require('dotenv').config();
+const { LolApi, Constants } = require("twisted");
+const axios = require("axios");
+require("dotenv").config();
 
+const Twisted = new LolApi({ key: process.env.API_KEY });
 
-const LeagueAPI = new League(process.env.API_KEY, Region.TR);
-const championFrequencies = {};
-const championKeys = {};
+const serverTransformer = (serverName) => {
+  switch (serverName.toLowerCase().replace(" ", "")) {
+    case "turkey":
+    case "tr":
+      return Constants.Regions.TURKEY;
+    case "euw":
+    case "euwest":
+      return Constants.Regions.EU_WEST;
+    case "eueast":
+      return Constants.Regions.EU_EAST;
+    case "na":
+    case "northamerica":
+      return Constants.Regions.AMERICA_NORTH;
+    case "korea":
+      return Constants.Regions.KOREA;
+    case "jp":
+    case "japan":
+      return Constants.Regions.JAPAN;
+    case "rus":
+    case "russia":
+      return Constants.Regions.RUSSIA;
+  }
+};
 
-fetch('http://ddragon.leagueoflegends.com/cdn/10.24.1/data/en_US/champion.json').then(res => res.json()).then(champions => {
-    for (let [key, value] of Object.entries(champions['data'])) {
-        championKeys[key] = value['key'];
+const getChampionNameFromId = async (championId, data) => {
+  const championKeys = {};
+
+  for (let [key, value] of Object.entries(data.data)) {
+    championKeys[value["key"]] = key;
+  }
+  return championKeys[championId];
+};
+
+const getFavoriteChampions = (matches) => {};
+
+const getStatsOfMatch = async (summoner, server, matchId, data) => {
+  let id;
+  let kda;
+  let win;
+  let totalDamage;
+  let visionScore;
+  let champion;
+  const matchData = await Twisted.Match.get(matchId, serverTransformer(server));
+
+  matchData.response.participantIdentities.forEach((participant) => {
+    if (participant.player.summonerName == summoner.response.name) {
+      id = participant.participantId;
     }
-    return championKeys;
-}).then(() => LeagueAPI.getSummonerByName('Coulrophobic')).then(accountInfo => LeagueAPI.getMatchList(accountInfo))
-    .then((activeGames) => {
-        const frequencies = {};
-        for (game of activeGames['matches']) {
-            if (game['champion'] in championFrequencies) {
-                championFrequencies[game['champion']] = championFrequencies[game['champion']] + 1;
-            } else {
-                championFrequencies[game['champion']] = 1;
-            }
-        }
-        for (let [key1, freq] of Object.entries(championFrequencies)) {
-            for (let [champion, key2] of Object.entries(championKeys)) {
-                if (key1 === key2 && freq > 5) {
-                    frequencies[champion] = freq;
-                    continue;
-                }
-            }
-        }
-        console.log(frequencies);
-        return frequencies;
-    }).catch(err => console.log(err));
+  });
 
+  for (participant of matchData.response.participants) {
+    if (participant.participantId == id) {
+      kda = (
+        (participant.stats.kills + participant.stats.assists) /
+        participant.stats.deaths
+      ).toFixed(2);
+      win = participant.stats.win;
+      totalDamage = participant.stats.totalDamageDealtToChampions;
+      visionScore = participant.stats.visionScore;
+      champion = await getChampionNameFromId(participant.championId, data);
+    }
+  }
+  return {
+    kda: kda,
+    win: win,
+    totalDamage: totalDamage,
+    visionScore: visionScore,
+    champion: champion,
+  };
+};
+
+(async () => {
+  try {
+    const stats = {};
+    const data = await Twisted.DataDragon.getChampion();
+    const summoner = await Twisted.Summoner.getByName(
+      "Coulrophobic",
+      serverTransformer("tr")
+    );
+    const matches = await Twisted.Match.list(
+      summoner.response.accountId,
+      serverTransformer("Tr")
+    );
+
+    for (match of matches.response.matches) {
+      stats[match.gameId] = await getStatsOfMatch(
+        summoner,
+        "Tr",
+        match.gameId,
+        data
+      );
+    }
+
+    console.log(matches);
+
+    /* const response = {
+      statusCode: 200,
+      headers: {
+        "Access-Control-Allow-Headers": "Content-Type",
+        "Access-Control-Allow-Origin": "http://localhost:3000",
+        "Access-Control-Allow-Methods": "OPTIONS,POST,GET",
+      },
+      body: JSON.stringify({ deneme }),
+    };
+
+    console.log(response); */
+  } catch (err) {
+    console.log(err);
+  }
+})();
