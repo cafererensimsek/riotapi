@@ -1,5 +1,7 @@
 const { LolApi, Constants } = require("twisted");
 const axios = require("axios");
+const { match } = require("assert");
+const { Champions } = require("twisted/dist/constants");
 require("dotenv").config();
 
 const Twisted = new LolApi({ key: process.env.API_KEY });
@@ -28,7 +30,7 @@ const serverTransformer = (serverName) => {
   }
 };
 
-const getChampionNameFromId = async (championId, data) => {
+const getChampionNameFromId = (championId, data) => {
   const championKeys = {};
 
   for (let [key, value] of Object.entries(data.data)) {
@@ -37,7 +39,60 @@ const getChampionNameFromId = async (championId, data) => {
   return championKeys[championId];
 };
 
-const getFavoriteChampions = (matches) => {};
+const getSummonerStats = async (matches, data, summonerId, server) => {
+  const frequency = {};
+  const favoriteChampions = {};
+  const favoriteChampionsById = [];
+  const lanes = {};
+
+  for (let match of matches) {
+    if (match["champion"] in frequency) {
+      frequency[match["champion"]] = frequency[match["champion"]] + 1;
+    } else {
+      frequency[match["champion"]] = 1;
+    }
+
+    if (match["lane"] in lanes) {
+      lanes[match["lane"]] = lanes[match["lane"]] + 1;
+    } else {
+      lanes[match["lane"]] = 1;
+    }
+  }
+
+  for (let [champion, freq] of Object.entries(frequency)) {
+    if (freq > 4) {
+      favoriteChampions[getChampionNameFromId(champion, data)] = {};
+      favoriteChampions[getChampionNameFromId(champion, data)][
+        "frequency"
+      ] = freq;
+      favoriteChampionsById.push(champion);
+      const mastery = await Twisted.Champion.masteryBySummonerChampion(
+        summonerId,
+        champion,
+        server
+      );
+      favoriteChampions[getChampionNameFromId(champion, data)][
+        "championLevel"
+      ] = mastery.response.championLevel;
+      favoriteChampions[getChampionNameFromId(champion, data)][
+        "championPoints"
+      ] = mastery.response.championPoints;
+    }
+  }
+
+  const matchesOfFavoriteChampions = matches.filter((match) =>
+    favoriteChampionsById.includes(match["champion"].toString())
+  );
+
+  const mastery = await Twisted.Champion.championsScore(summonerId, server);
+
+  return {
+    favorites: favoriteChampions,
+    lanes: lanes,
+    matchesOfFavoriteChampions: matchesOfFavoriteChampions,
+    totalMastery: mastery,
+  };
+};
 
 const getStatsOfMatch = async (summoner, server, matchId, data) => {
   let id;
@@ -78,17 +133,26 @@ const getStatsOfMatch = async (summoner, server, matchId, data) => {
 (async () => {
   try {
     const stats = {};
+    const summonerData = {};
     const data = await Twisted.DataDragon.getChampion();
     const summoner = await Twisted.Summoner.getByName(
       "Coulrophobic",
       serverTransformer("tr")
     );
+
     const matches = await Twisted.Match.list(
       summoner.response.accountId,
       serverTransformer("Tr")
     );
 
-    for (match of matches.response.matches) {
+    const summonerStats = await getSummonerStats(
+      matches.response.matches,
+      data,
+      summoner.response.id,
+      serverTransformer("tr")
+    );
+
+    for (let match of summonerStats.matchesOfFavoriteChampions) {
       stats[match.gameId] = await getStatsOfMatch(
         summoner,
         "Tr",
@@ -97,19 +161,28 @@ const getStatsOfMatch = async (summoner, server, matchId, data) => {
       );
     }
 
-    console.log(matches);
+    for (let stat of Object.values(stats)) {
+    }
 
-    /* const response = {
+    summonerData.favoriteChampions = summonerStats.favorites;
+    summonerData.lanes = summonerStats.lanes;
+    summonerData.favoriteStats = stats;
+    summonerData.name = summoner.response.name;
+    summonerData.level = summoner.response.summonerLevel;
+    summonerData.icon = summoner.response.profileIconId;
+    summonerData.mastery = summonerStats.totalMastery.score;
+
+    const response = {
       statusCode: 200,
       headers: {
         "Access-Control-Allow-Headers": "Content-Type",
         "Access-Control-Allow-Origin": "http://localhost:3000",
         "Access-Control-Allow-Methods": "OPTIONS,POST,GET",
       },
-      body: JSON.stringify({ deneme }),
+      body: JSON.stringify(summonerData),
     };
 
-    console.log(response); */
+    console.log(response);
   } catch (err) {
     console.log(err);
   }
