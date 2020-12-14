@@ -1,7 +1,4 @@
 const { LolApi, Constants } = require("twisted");
-const axios = require("axios");
-const { match } = require("assert");
-const { Champions } = require("twisted/dist/constants");
 require("dotenv").config();
 
 const Twisted = new LolApi({ key: process.env.API_KEY });
@@ -111,10 +108,9 @@ const getStatsOfMatch = async (summoner, server, matchId, data) => {
 
   for (participant of matchData.response.participants) {
     if (participant.participantId == id) {
-      kda = (
+      kda =
         (participant.stats.kills + participant.stats.assists) /
-        participant.stats.deaths
-      ).toFixed(2);
+        participant.stats.deaths;
       win = participant.stats.win;
       totalDamage = participant.stats.totalDamageDealtToChampions;
       visionScore = participant.stats.visionScore;
@@ -128,6 +124,48 @@ const getStatsOfMatch = async (summoner, server, matchId, data) => {
     visionScore: visionScore,
     champion: champion,
   };
+};
+
+const filterStatsByChampion = (stats) => {
+  const filteredStats = {};
+  for (let stat of Object.values(stats)) {
+    if (stat.champion in filteredStats) {
+      filteredStats[stat.champion]["kda"] +=
+        isNaN(stat.kda) || stat.kda === Infinity ? 10 : stat.kda;
+      filteredStats[stat.champion]["totalDamage"] += stat.totalDamage;
+      filteredStats[stat.champion]["visionScore"] += stat.visionScore;
+      filteredStats[stat.champion]["win"] += stat.win ? 1 : -1;
+    } else {
+      filteredStats[stat.champion] = {
+        kda: isNaN(stat.kda) || stat.kda === Infinity ? 10 : stat.kda,
+        totalDamage: stat.totalDamage,
+        visionScore: stat.visionScore,
+        win: stat.win ? 1 : -1,
+      };
+    }
+  }
+  const length = Object.keys(stats).length;
+
+  for (let filteredStat of Object.values(filteredStats)) {
+    filteredStat.kda = (filteredStat.kda / length).toFixed(2);
+    filteredStat.totalDamage = (filteredStat.totalDamage / length).toFixed(2);
+    filteredStat.visionScore = (filteredStat.visionScore / length).toFixed(2);
+    filteredStat.win = ((filteredStat.win / length) * 100).toFixed(2);
+  }
+
+  return filteredStats;
+};
+
+const getChampionDetails = async (favorites, champions) => {
+  const details = {};
+  for (let champion of Object.keys(favorites)) {
+    details[champion] = {
+      title: champions.data[champion].title,
+      blurb: champions.data[champion].blurb,
+      role: champions.data[champion].tags[0],
+    };
+  }
+  return details;
 };
 
 (async () => {
@@ -161,16 +199,29 @@ const getStatsOfMatch = async (summoner, server, matchId, data) => {
       );
     }
 
-    for (let stat of Object.values(stats)) {
+    const filteredStats = filterStatsByChampion(stats);
+    const championDetails = await getChampionDetails(
+      summonerStats.favorites,
+      data
+    );
+
+    summonerData.favorites = {};
+
+    for (let [champion, filteredStat] of Object.entries(filteredStats)) {
+      summonerData.favorites[champion] = {
+        ...filteredStat,
+        ...championDetails[champion],
+        ...summonerStats.favorites[champion],
+      };
     }
 
-    summonerData.favoriteChampions = summonerStats.favorites;
-    summonerData.lanes = summonerStats.lanes;
-    summonerData.favoriteStats = stats;
-    summonerData.name = summoner.response.name;
-    summonerData.level = summoner.response.summonerLevel;
-    summonerData.icon = summoner.response.profileIconId;
-    summonerData.mastery = summonerStats.totalMastery.score;
+    summonerData.summonerDetails = {
+      lanes: summonerStats.lanes,
+      name: summoner.response.name,
+      level: summoner.response.summonerLevel,
+      icon: summoner.response.profileIconId,
+      mastery: summonerStats.totalMastery.score,
+    };
 
     const response = {
       statusCode: 200,
@@ -179,7 +230,7 @@ const getStatsOfMatch = async (summoner, server, matchId, data) => {
         "Access-Control-Allow-Origin": "http://localhost:3000",
         "Access-Control-Allow-Methods": "OPTIONS,POST,GET",
       },
-      body: JSON.stringify(summonerData),
+      body: JSON.stringify({ ...summonerData }),
     };
 
     console.log(response);
